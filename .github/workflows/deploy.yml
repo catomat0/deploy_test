@@ -1,0 +1,47 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -e
+            cd /home/ubuntu/app
+            git pull origin main
+            echo "${{ secrets.ENV_PROD }}" > .env.prod
+            if ! docker info > /dev/null 2>&1; then sudo chmod 666 /var/run/docker.sock; fi
+            if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
+              docker compose --env-file .env.prod pull || true
+              docker compose --env-file .env.prod up -d --build --remove-orphans
+              docker image prune -f
+            elif [ -f Dockerfile ]; then
+              docker build -t app .
+              docker stop app 2>/dev/null || true
+              docker rm app 2>/dev/null || true
+              docker run -d --name app -p 8080:8080 --env-file .env.prod --restart unless-stopped app
+              docker image prune -f
+            else
+              echo "지원되지 않는 앱 구성: docker-compose.yml 또는 Dockerfile이 필요합니다."
+              exit 1
+            fi
+
+      - name: Health Check
+        run: |
+          sleep 15
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}:80 || echo "000")
+          echo "Health check: HTTP $STATUS"
