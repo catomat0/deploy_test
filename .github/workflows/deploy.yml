@@ -24,16 +24,16 @@ jobs:
             cd /home/ubuntu/app
             git pull origin main
             echo "${{ secrets.ENV_PROD }}" > .env.prod
+            cp .env.prod .env
             if ! docker info > /dev/null 2>&1; then sudo chmod 666 /var/run/docker.sock; fi
             if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
-              docker compose --env-file .env.prod pull || true
-              docker compose --env-file .env.prod up -d --build --remove-orphans
+              docker-compose up -d --build --remove-orphans
               docker image prune -f
             elif [ -f Dockerfile ]; then
               docker build -t app .
               docker stop app 2>/dev/null || true
               docker rm app 2>/dev/null || true
-              docker run -d --name app -p 8080:8080 --env-file .env.prod --restart unless-stopped app
+              docker run -d --name app -p 8080:8080 --env-file .env --restart unless-stopped app
               docker image prune -f
             else
               echo "지원되지 않는 앱 구성: docker-compose.yml 또는 Dockerfile이 필요합니다."
